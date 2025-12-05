@@ -1,0 +1,417 @@
+import React, { useState } from 'react';
+import { Upload, Mic, FileAudio, MessageSquare, TrendingUp, Award, AlertCircle, CheckCircle2 } from 'lucide-react';
+
+const AudioAnalyzerApp = () => {
+  const [audioFile, setAudioFile] = useState(null);
+  const [transcript, setTranscript] = useState('');
+  const [analysis, setAnalysis] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState(1);
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setAudioFile(file);
+      setStep(2);
+    }
+  };
+
+  const transcribeAudio = async () => {
+    setLoading(true);
+    try {
+      // Convert audio file to base64
+      const base64Audio = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(audioFile);
+      });
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'document',
+                  source: {
+                    type: 'base64',
+                    media_type: audioFile.type,
+                    data: base64Audio
+                  }
+                },
+                {
+                  type: 'text',
+                  text: `ກະລຸນາແປງໄຟລ์ສຽງນີ້ເປັນຂໍ້ຄວາມພາສາລາວ. ໃຫ້ແຍກຜູ້ເວົ້າອອກເປັນສອງຄົນໂດຍອ້າງອີງຈາກລັກສະນະສຽງ:
+- ຜູ້ໂທເຂົ້າ (Customer): ຜູ້ທີ່ໂທຫາຂໍຮັບບໍລິການ
+- ຜູ້ຮັບສາຍ (Agent): ຜູ້ໃຫ້ບໍລິການ
+
+ຈັດຮູບແບບດັ່ງນີ້:
+Agent: [ຂໍ້ຄວາມ]
+Customer: [ຂໍ້ຄວາມ]
+
+ຖ້າໄຟລ์ນີ້ບໍ່ແມ່ນໄຟລ່ສຽງ ຫຼື ບໍ່ສາມາດແປງໄດ້, ກະລຸນາແຈ້ງໃຫ້ຊາບ.`
+                }
+              ]
+            }
+          ]
+        })
+      });
+
+      const data = await response.json();
+      const transcriptText = data.content
+        .filter(item => item.type === 'text')
+        .map(item => item.text)
+        .join('\n');
+
+      setTranscript(transcriptText);
+      setStep(3);
+    } catch (error) {
+      console.error('ຂໍ້ຜິດພາດໃນການແປງສຽງ:', error);
+      alert('ເກີດຂໍ້ຜິດພາດໃນການແປງສຽງ ກະລຸນາລອງໃໝ່ອີກຄັ້ງ');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const analyzeConversation = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          messages: [
+            {
+              role: 'user',
+              content: `ທ່ານເປັນຜູ້ຊ່ຽວຊານດ້ານການວິເຄາະຄຸນນະພາບການບໍລິການລູກຄ້າ. 
+
+ບົດສົນທະນາລະຫວ່າງ Agent (ຜູ້ໃຫ້ບໍລິການ) ແລະ Customer (ລູກຄ້າ):
+
+${transcript}
+
+ກະລຸນາວິເຄາະຢ່າງລະອຽດໂດຍສະແດງຜົນເປັນ JSON ເທົ່ານັ້ນ (ບໍ່ມີ markdown backticks):
+
+{
+  "vocabulary_score": {
+    "percentage": 0-100,
+    "details": "ອະທິບາຍການໃຊ້ຄຳສັບສຸພາບ",
+    "examples": ["ຕົວຢ່າງຄຳສັບທີ່ດີ"]
+  },
+  "tone_score": {
+    "percentage": 0-100,
+    "details": "ອະທິບາຍນ້ຳສຽງ ແລະ ທ່າທີ",
+    "friendly_level": "ສູງ/ກາງ/ຕ່ຳ"
+  },
+  "efficiency_score": {
+    "percentage": 0-100,
+    "details": "ອະທິບາຍຄວາມຮວດເຮັວ",
+    "resolution_status": "ແກ້ໄຂສຳເລັດ/ບາງສ່ວນ/ບໍ່ສຳເລັດ"
+  },
+  "professionalism_score": {
+    "percentage": 0-100,
+    "details": "ອະທິບາຍຄວາມເປັນມືອາຊີບ"
+  },
+  "overall_score": 0-10,
+  "strengths": ["ຈຸດແຂງ 1", "ຈຸດແຂງ 2"],
+  "improvements": ["ສິ່ງທີ່ຄວນປັບປຸງ 1"],
+  "recommendations": ["ຄຳແນະນຳ 1"]
+}
+
+ຕອບເປັນພາສາລາວເທົ່ານັ້ນ. ຕອບດ້ວຍ JSON ເທົ່ານັ້ນ ບໍ່ມີຂໍ້ຄວາມອື່ນ.`
+            }
+          ]
+        })
+      });
+
+      const data = await response.json();
+      const responseText = data.content
+        .filter(item => item.type === 'text')
+        .map(item => item.text)
+        .join('\n');
+
+      // Clean and parse JSON
+      const cleanJson = responseText.replace(/```json|```/g, '').trim();
+      const analysisData = JSON.parse(cleanJson);
+      
+      setAnalysis(analysisData);
+      setStep(4);
+    } catch (error) {
+      console.error('ຂໍ້ຜິດພາດໃນການວິເຄາະ:', error);
+      alert('ເກີດຂໍ້ຜິດພາດໃນການວິເຄາະ ກະລຸນາລອງໃໝ່ອີກຄັ້ງ');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const reset = () => {
+    setAudioFile(null);
+    setTranscript('');
+    setAnalysis(null);
+    setStep(1);
+  };
+
+  const getScoreColor = (score) => {
+    if (score >= 80) return 'text-green-600';
+    if (score >= 60) return 'text-yellow-600';
+    return 'text-red-600';
+  };
+
+  const getOverallScoreColor = (score) => {
+    if (score >= 8) return 'bg-green-100 border-green-500 text-green-800';
+    if (score >= 6) return 'bg-yellow-100 border-yellow-500 text-yellow-800';
+    return 'bg-red-100 border-red-500 text-red-800';
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <div className="max-w-5xl mx-auto">
+        {/* Header */}
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          <div className="flex items-center gap-3 mb-2">
+            <Mic className="w-8 h-8 text-indigo-600" />
+            <h1 className="text-3xl font-bold text-gray-800">ລະບົບວິເຄາະຄຸນນະພາບການບໍລິການລູກຄ້າ</h1>
+          </div>
+          <p className="text-gray-600">ວິເຄາະບົດສົນທະນາ ແລະ ປະເມີນການບໍລິການອັດຕະໂນມັດ</p>
+        </div>
+
+        {/* Step 1: Upload */}
+        {step === 1 && (
+          <div className="bg-white rounded-xl shadow-lg p-8">
+            <div className="text-center">
+              <Upload className="w-16 h-16 text-indigo-600 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">ອັບໂຫຼດໄຟລ່ສຽງ</h2>
+              <p className="text-gray-600 mb-6">ຮອງຮັບໄຟລ່: MP3, WAV, M4A, ຫຼື ໄຟລ່ສຽງອື່ນໆ</p>
+              
+              <label className="inline-flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-lg cursor-pointer hover:bg-indigo-700 transition">
+                <FileAudio className="w-5 h-5" />
+                <span>ເລືອກໄຟລ່</span>
+                <input
+                  type="file"
+                  accept="audio/*"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: Transcribe */}
+        {step === 2 && (
+          <div className="bg-white rounded-xl shadow-lg p-8">
+            <div className="text-center">
+              <CheckCircle2 className="w-16 h-16 text-green-600 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">ອັບໂຫຼດສຳເລັດ</h2>
+              <p className="text-gray-600 mb-2">ໄຟລ່: {audioFile?.name}</p>
+              <p className="text-gray-500 text-sm mb-6">ຂະໜາດ: {(audioFile?.size / 1024 / 1024).toFixed(2)} MB</p>
+              
+              <button
+                onClick={transcribeAudio}
+                disabled={loading}
+                className="bg-indigo-600 text-white px-8 py-3 rounded-lg hover:bg-indigo-700 transition disabled:bg-gray-400 inline-flex items-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    <span>ກຳລັງແປງສຽງເປັນຂໍ້ຄວາມ...</span>
+                  </>
+                ) : (
+                  <>
+                    <MessageSquare className="w-5 h-5" />
+                    <span>ແປງສຽງເປັນຂໍ້ຄວາມ</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: Review Transcript */}
+        {step === 3 && (
+          <div className="bg-white rounded-xl shadow-lg p-8">
+            <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <MessageSquare className="w-6 h-6 text-indigo-600" />
+              ບົດສົນທະນາ
+            </h2>
+            <div className="bg-gray-50 rounded-lg p-4 mb-6 max-h-96 overflow-y-auto whitespace-pre-wrap font-mono text-sm">
+              {transcript}
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={analyzeConversation}
+                disabled={loading}
+                className="flex-1 bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition disabled:bg-gray-400 inline-flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    <span>ກຳລັງວິເຄາະ...</span>
+                  </>
+                ) : (
+                  <>
+                    <TrendingUp className="w-5 h-5" />
+                    <span>ວິເຄາະການບໍລິການ</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={reset}
+                className="bg-gray-200 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-300 transition"
+              >
+                ເລີ່ມໃໝ່
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: Analysis Results */}
+        {step === 4 && analysis && (
+          <div className="space-y-6">
+            {/* Overall Score */}
+            <div className={`rounded-xl shadow-lg p-8 border-4 ${getOverallScoreColor(analysis.overall_score)}`}>
+              <div className="text-center">
+                <Award className="w-16 h-16 mx-auto mb-4" />
+                <h2 className="text-3xl font-bold mb-2">ຄະແນນລວມ</h2>
+                <div className="text-6xl font-bold mb-2">{analysis.overall_score}/10</div>
+              </div>
+            </div>
+
+            {/* Detailed Scores */}
+            <div className="bg-white rounded-xl shadow-lg p-8">
+              <h2 className="text-2xl font-bold text-gray-800 mb-6">ຜົນການວິເຄາະລະອຽດ</h2>
+              
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Vocabulary Score */}
+                <div className="border-2 border-gray-200 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">ການໃຊ້ຄຳສັບສຸພາບ</h3>
+                  <div className={`text-4xl font-bold mb-2 ${getScoreColor(analysis.vocabulary_score.percentage)}`}>
+                    {analysis.vocabulary_score.percentage}%
+                  </div>
+                  <p className="text-gray-600 text-sm mb-2">{analysis.vocabulary_score.details}</p>
+                  {analysis.vocabulary_score.examples?.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-xs font-semibold text-gray-500 mb-1">ຕົວຢ່າງ:</p>
+                      <div className="flex flex-wrap gap-1">
+                        {analysis.vocabulary_score.examples.map((ex, i) => (
+                          <span key={i} className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                            {ex}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Tone Score */}
+                <div className="border-2 border-gray-200 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">ນ້ຳສຽງ ແລະ ທ່າທີ</h3>
+                  <div className={`text-4xl font-bold mb-2 ${getScoreColor(analysis.tone_score.percentage)}`}>
+                    {analysis.tone_score.percentage}%
+                  </div>
+                  <p className="text-gray-600 text-sm mb-2">{analysis.tone_score.details}</p>
+                  <span className="inline-block text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                    ລະດັບຄວາມເປັນມິດ: {analysis.tone_score.friendly_level}
+                  </span>
+                </div>
+
+                {/* Efficiency Score */}
+                <div className="border-2 border-gray-200 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">ຄວາມຮວດເຮັວ</h3>
+                  <div className={`text-4xl font-bold mb-2 ${getScoreColor(analysis.efficiency_score.percentage)}`}>
+                    {analysis.efficiency_score.percentage}%
+                  </div>
+                  <p className="text-gray-600 text-sm mb-2">{analysis.efficiency_score.details}</p>
+                  <span className="inline-block text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
+                    ສະຖານະ: {analysis.efficiency_score.resolution_status}
+                  </span>
+                </div>
+
+                {/* Professionalism Score */}
+                <div className="border-2 border-gray-200 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">ຄວາມເປັນມືອາຊີບ</h3>
+                  <div className={`text-4xl font-bold mb-2 ${getScoreColor(analysis.professionalism_score.percentage)}`}>
+                    {analysis.professionalism_score.percentage}%
+                  </div>
+                  <p className="text-gray-600 text-sm">{analysis.professionalism_score.details}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Strengths and Improvements */}
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Strengths */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h3 className="text-xl font-bold text-green-700 mb-4 flex items-center gap-2">
+                  <CheckCircle2 className="w-6 h-6" />
+                  ຈຸດແຂງ
+                </h3>
+                <ul className="space-y-2">
+                  {analysis.strengths.map((strength, i) => (
+                    <li key={i} className="flex items-start gap-2 text-gray-700">
+                      <span className="text-green-600 mt-1">✓</span>
+                      <span>{strength}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Improvements */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h3 className="text-xl font-bold text-orange-700 mb-4 flex items-center gap-2">
+                  <AlertCircle className="w-6 h-6" />
+                  ຈຸດທີ່ຄວນປັບປຸງ
+                </h3>
+                <ul className="space-y-2">
+                  {analysis.improvements.map((improvement, i) => (
+                    <li key={i} className="flex items-start gap-2 text-gray-700">
+                      <span className="text-orange-600 mt-1">→</span>
+                      <span>{improvement}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            {/* Recommendations */}
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <h3 className="text-xl font-bold text-indigo-700 mb-4">ຄຳແນະນຳ</h3>
+              <ul className="space-y-3">
+                {analysis.recommendations.map((rec, i) => (
+                  <li key={i} className="flex items-start gap-3 text-gray-700 bg-indigo-50 p-3 rounded-lg">
+                    <span className="text-indigo-600 font-bold">{i + 1}.</span>
+                    <span>{rec}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Reset Button */}
+            <div className="text-center">
+              <button
+                onClick={reset}
+                className="bg-gray-600 text-white px-8 py-3 rounded-lg hover:bg-gray-700 transition"
+              >
+                ວິເຄາະໄຟລ່ໃໝ່
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default AudioAnalyzerApp;
